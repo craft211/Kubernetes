@@ -59,6 +59,7 @@ sudo reboot
 
 After reboot, on the **control plane** node:
 ```bash
+cd ~/k8s-setup
 sudo ./init-control-plane.sh
 ```
 
