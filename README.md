@@ -25,80 +25,87 @@ Provision VMs with the following:
 
 ---
 
-## ⚙️ Prepare the VMs
+## 🛠️ Automated Kubernetes Setup
 
-### Update and install dependencies
+You will use scripts to simplify and automate the installation process.
+
+### Step 1: Create and upload the scripts
+
+Create two bash scripts on each VM (or use SCP to transfer):
+
+#### `setup-k8s.sh` (run on all nodes)
 ```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y curl apt-transport-https ca-certificates gnupg lsb-release
+#!/bin/bash
+set -e
+
+swapoff -a
+sed -i '/ swap / s/^/#/' /etc/fstab
+
+apt update && apt upgrade -y
+apt install -y curl apt-transport-https ca-certificates gnupg lsb-release
+
+apt install -y containerd
+mkdir -p /etc/containerd
+containerd config default | tee /etc/containerd/config.toml
+systemctl restart containerd
+systemctl enable containerd
+
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+echo "deb http://apt.kubernetes.io/ kubernetes-xenial main" > /etc/apt/sources.list.d/kubernetes.list
+
+apt update
+apt install -y kubelet kubeadm kubectl
+apt-mark hold kubelet kubeadm kubectl
+
+echo "[Done] Base setup complete. Reboot recommended."
 ```
 
-### Disable swap (required by Kubernetes)
+#### `init-control-plane.sh` (run only on the control plane)
 ```bash
-sudo swapoff -a
-sudo sed -i '/ swap / s/^/#/' /etc/fstab
-```
+#!/bin/bash
+set -e
 
----
+kubeadm init --pod-network-cidr=10.244.0.0/16
 
-## 📦 Install Container Runtime (containerd)
-
-```bash
-sudo apt install -y containerd
-sudo mkdir -p /etc/containerd
-containerd config default | sudo tee /etc/containerd/config.toml
-sudo systemctl restart containerd
-sudo systemctl enable containerd
-```
-
----
-
-## 🔧 Install Kubernetes Components
-
-### Add Kubernetes APT repository
-```bash
-curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
-echo "deb http://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
-```
-
-### Install kubelet, kubeadm, and kubectl
-```bash
-sudo apt update
-sudo apt install -y kubelet kubeadm kubectl
-sudo apt-mark hold kubelet kubeadm kubectl
-```
-
----
-
-## 🚀 Initialize the Control Plane Node
-
-### Run on the control plane node:
-```bash
-sudo kubeadm init --pod-network-cidr=10.244.0.0/16
-```
-
-### Configure kubectl access
-```bash
 mkdir -p $HOME/.kube
-sudo cp /etc/kubernetes/admin.conf $HOME/.kube/config
-sudo chown $(id -u):$(id -g) $HOME/.kube/config
-```
+cp /etc/kubernetes/admin.conf $HOME/.kube/config
+chown $(id -u):$(id -g) $HOME/.kube/config
 
----
-
-## 🌐 Install Pod Network (Flannel)
-
-```bash
 kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+
+echo "[Done] Control plane is ready."
+
+echo "Run this on each worker node to join the cluster:"
+kubeadm token create --print-join-command
 ```
 
----
-
-## 🧩 Join Worker Nodes
-
-From the control plane node, copy the output `kubeadm join ...` command and run it on each worker node:
+Make the scripts executable:
 ```bash
-kubeadm join <MASTER_IP>:6443 --token <TOKEN> --discovery-token-ca-cert-hash sha256:<HASH>
+chmod +x setup-k8s.sh init-control-plane.sh
+```
+
+### Step 2: Run the setup
+
+On **all nodes** (control + workers):
+```bash
+sudo ./setup-k8s.sh
+```
+
+Then **reboot** each node:
+```bash
+sudo reboot
+```
+
+After reboot, on the **control plane** node:
+```bash
+sudo ./init-control-plane.sh
+```
+
+Copy the output `kubeadm join ...` command.
+
+On **each worker node**, run the join command:
+```bash
+sudo kubeadm join <MASTER_IP>:6443 --token <TOKEN> --discovery-token-ca-cert-hash sha256:<HASH>
 ```
 
 ---
