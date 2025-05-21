@@ -29,64 +29,23 @@ Provision VMs with the following:
 
 You will use scripts to simplify and automate the installation process.
 
-### Step 1: Create and upload the scripts
+### Step 1: Prepare a Working Directory and Download the Scripts
 
-Create two bash scripts on each VM (or use SCP to transfer):
-
-#### `setup-k8s.sh` (run on all nodes)
+On each VM, create a working folder and download the scripts inside it:
 ```bash
-#!/bin/bash
-set -e
-
-swapoff -a
-sed -i '/ swap / s/^/#/' /etc/fstab
-
-apt update && apt upgrade -y
-apt install -y curl apt-transport-https ca-certificates gnupg lsb-release
-
-apt install -y containerd
-mkdir -p /etc/containerd
-containerd config default | tee /etc/containerd/config.toml
-systemctl restart containerd
-systemctl enable containerd
-
-curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
-echo "deb http://apt.kubernetes.io/ kubernetes-xenial main" > /etc/apt/sources.list.d/kubernetes.list
-
-apt update
-apt install -y kubelet kubeadm kubectl
-apt-mark hold kubelet kubeadm kubectl
-
-echo "[Done] Base setup complete. Reboot recommended."
+mkdir -p ~/k8s-setup
+cd ~/k8s-setup
 ```
-
-#### `init-control-plane.sh` (run only on the control plane)
 ```bash
-#!/bin/bash
-set -e
+wget https://raw.githubusercontent.com/craft211/Kubernetes/cb47be911628cabf99ed17480f16a60741e6d7e3/setup-k8s.sh
+wget https://raw.githubusercontent.com/craft211/Kubernetes/cb47be911628cabf99ed17480f16a60741e6d7e3/init-control-plane.sh
 
-kubeadm init --pod-network-cidr=10.244.0.0/16
-
-mkdir -p $HOME/.kube
-cp /etc/kubernetes/admin.conf $HOME/.kube/config
-chown $(id -u):$(id -g) $HOME/.kube/config
-
-kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
-
-echo "[Done] Control plane is ready."
-
-echo "Run this on each worker node to join the cluster:"
-kubeadm token create --print-join-command
-```
-
-Make the scripts executable:
-```bash
 chmod +x setup-k8s.sh init-control-plane.sh
 ```
 
-### Step 2: Run the setup
+### Step 2: Run the Base Setup Script
 
-On **all nodes** (control + workers):
+Run the following on **all nodes** (control + workers):
 ```bash
 sudo ./setup-k8s.sh
 ```
@@ -96,12 +55,16 @@ Then **reboot** each node:
 sudo reboot
 ```
 
+### Step 3: Initialize the Control Plane
+
 After reboot, on the **control plane** node:
 ```bash
 sudo ./init-control-plane.sh
 ```
 
 Copy the output `kubeadm join ...` command.
+
+### Step 4: Join Worker Nodes to the Cluster
 
 On **each worker node**, run the join command:
 ```bash
@@ -135,3 +98,4 @@ All nodes should show as `Ready` and pods should be running normally.
 - [Kubernetes Official Docs](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/)
 - [Flannel Network](https://github.com/coreos/flannel)
 - [containerd](https://containerd.io/)
+- [GitHub Scripts Repo](https://github.com/craft211/Kubernetes)
